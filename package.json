@@ -8,7 +8,20 @@
     "dev": "nodemon server.js",
     "init-db": "node init-database.js"
   },
-  "keywords": ["stokvel", "api", "postgresql"],
+  "keywords": [
+    "stokvel",
+    "api",
+    "postgresql"
+  ],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "body-parser": "^2.2.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.16.3"
+  }
 }
