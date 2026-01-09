@@ -1,0 +1,14 @@
+{
+  "name": "powerhouse-stokvel-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Powerhouse Stokvel Club",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "init-db": "node init-database.js"
+  },
+  "keywords": ["stokvel", "api", "postgresql"],
+  "author": "",
+  "license": "ISC"
+}
