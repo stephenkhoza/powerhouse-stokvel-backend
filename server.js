@@ -12,41 +12,27 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
-// ==================== CORS ====================
-// Force redeploy with CORS fix for Vercel preview domains
-app.set('trust proxy', 1); // trust Render/Vercel proxy
 
-// Configure allowed origins from env or hardcode production + local
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://powerhouse-stokvel-frontend.vercel.app';
 const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  FRONTEND_URL
+  'http://localhost:5173', // your local dev frontend
+  'https://powerhouse-stokvel-frontend-1ly5.vercel.app' // replace with your live frontend URL 
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
     // allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
-    
-    // Check exact match
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    
-    // Allow Vercel preview domains (*.vercel.app)
-    if (origin && origin.includes('vercel.app')) return callback(null, true);
-    
-    const msg = `CORS policy: Origin ${origin} not allowed.`;
-    return callback(new Error(msg), false);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = `CORS policy: This origin (${origin}) is not allowed.`;
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  credentials: true // allow cookies/auth headers
 };
 
 app.use(cors(corsOptions));
-
-// Explicit OPTIONS handler for all routes
-app.options('*', cors(corsOptions));
 
 
 app.use(bodyParser.json());
