@@ -12,40 +12,42 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
-// Middleware
-// const corsOptions = {
-//   origin: 'http://localhost:5173', // your frontend URL
-//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//   credentials: true
-// };
+// ==================== CORS ====================
+app.set('trust proxy', 1); // trust Render/Vercel proxy
 
-
-
+// Configure allowed origins from env or hardcode production + local
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://powerhouse-stokvel-frontend.vercel.app';
 const allowedOrigins = [
-  'http://localhost:5173', // your local dev frontend
-  'https://powerhouse-stokvel-frontend.vercel.app/' // replace with your live frontend URL 
+  'http://localhost:5173',
+  'http://localhost:3000',
+  FRONTEND_URL
 ];
 
 const corsOptions = {
   origin: function (origin, callback) {
     // allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = `CORS policy: This origin (${origin}) is not allowed.`;
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
+    
+    // Check exact match
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    
+    // Allow Vercel preview domains (*.vercel.app)
+    if (origin && origin.includes('vercel.app')) return callback(null, true);
+    
+    const msg = `CORS policy: Origin ${origin} not allowed.`;
+    return callback(new Error(msg), false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  credentials: true // allow cookies/auth headers
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 };
 
 app.use(cors(corsOptions));
 
+// Explicit OPTIONS handler for all routes
+app.options('*', cors(corsOptions));
 
-app.use(cors(corsOptions));
 
-app.use(cors());
 app.use(bodyParser.json());
 
 // Initialize database on startup
