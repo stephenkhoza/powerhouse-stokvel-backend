@@ -13,6 +13,7 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
 // ==================== CORS ====================
+// Force redeploy with CORS fix for Vercel preview domains
 app.set('trust proxy', 1); // trust Render/Vercel proxy
 
 // Configure allowed origins from env or hardcode production + local
