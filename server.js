@@ -15,7 +15,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
 const allowedOrigins = [
   'http://localhost:5173', // your local dev frontend
-  'https://powerhouse-stokvel-frontend-1ly5.vercel.app' // replace with your live frontend URL 
+  'https://powerhouse-stokvel-frontend.vercel.app', // replace with your live frontend URL 
+  'https://powerhouse-stokvel-frontend-1ly5.vercel.app'
 ];
 
 const corsOptions = {
