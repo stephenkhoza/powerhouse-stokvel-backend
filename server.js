@@ -227,13 +227,33 @@ app.get('/api/contributions', authenticateToken, async (req, res) => {
 });
 
 // Add contribution (admin only)
+// app.post('/api/contributions', authenticateToken, isAdmin, async (req, res) => {
+//   try {
+//     const { memberId, month, amount, status, date } = req.body;
+
+//     const result = await pool.query(
+//       'INSERT INTO contributions (member_id, month, amount, status, payment_date) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+//       [memberId, month, amount, status || 'Pending', date]
+//     );
+
+//     res.status(201).json({ id: result.rows[0].id, message: 'Contribution created successfully' });
+//   } catch (error) {
+//     console.error('Error creating contribution:', error);
+//     res.status(500).json({ error: 'Failed to create contribution' });
+//   }
+// });
+
+// Add contribution (admin only)
 app.post('/api/contributions', authenticateToken, isAdmin, async (req, res) => {
   try {
-    const { memberId, month, amount, status, date } = req.body;
+    const { memberId, month, amount, status } = req.body;
+
+    // If status is Paid, save current timestamp; else null
+    const paymentDate = status === 'Paid' ? new Date().toISOString() : null;
 
     const result = await pool.query(
       'INSERT INTO contributions (member_id, month, amount, status, payment_date) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [memberId, month, amount, status || 'Pending', date]
+      [memberId, month, amount, status || 'Pending', paymentDate]
     );
 
     res.status(201).json({ id: result.rows[0].id, message: 'Contribution created successfully' });
@@ -244,24 +264,49 @@ app.post('/api/contributions', authenticateToken, isAdmin, async (req, res) => {
 });
 
 // Update contribution status (admin only)
+// app.put('/api/contributions/:id', authenticateToken, isAdmin, async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { status } = req.body;
+//     const date = status === 'Paid' ? new Date().toISOString().split('T')[0] : null;
+
+//     await pool.query(
+//       'UPDATE contributions SET status = $1, payment_date = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+//       [status, date, id]
+//     );
+
+//     res.json({ message: 'Contribution updated successfully' });
+//   } catch (error) {
+//     console.error('Error updating contribution:', error);
+//     res.status(500).json({ error: 'Failed to update contribution' });
+//   }
+// });
+
+
+// Update contribution status (admin only)
 app.put('/api/contributions/:id', authenticateToken, isAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const date = status === 'Paid' ? new Date().toISOString().split('T')[0] : null;
 
-    await pool.query(
-      'UPDATE contributions SET status = $1, payment_date = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
-      [status, date, id]
+    // Use full timestamp for payment_date if Paid
+    const payment_date = status === 'Paid' ? new Date().toISOString() : null;
+
+    const result = await pool.query(
+      'UPDATE contributions SET status = $1, payment_date = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
+      [status, payment_date, id]
     );
 
-    res.json({ message: 'Contribution updated successfully' });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Contribution not found' });
+    }
+
+    res.json(result.rows[0]); // return the updated contribution including payment_date
   } catch (error) {
     console.error('Error updating contribution:', error);
     res.status(500).json({ error: 'Failed to update contribution' });
   }
 });
-
 // ==================== ANNOUNCEMENT ROUTES ====================
 
 // Get all announcements
