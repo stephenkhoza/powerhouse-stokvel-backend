@@ -143,34 +143,100 @@ app.get('/api/members/:id', authenticateToken, async (req, res) => {
 });
 
 // Add new member (admin only)
+// app.post('/api/members', authenticateToken, isAdmin, async (req, res) => {
+//   try {
+//     const { name, idNumber, phone, email, password, status, role, bankName, accountHolder, accountNumber, branchCode } = req.body;
+
+//     // Generate member ID
+//     const countResult = await pool.query('SELECT COUNT(*) FROM members');
+//     const memberCount = parseInt(countResult.rows[0].count) + 1;
+//     const memberId = `PHSC2601${String(memberCount).padStart(3, '0')}`;
+    
+//     const hashedPassword = await bcrypt.hash(password || 'member123', 10);
+//     const joinDate = new Date().toISOString().split('T')[0];
+
+//     await pool.query(
+//       `INSERT INTO members (id, name, id_number, phone, email, password, status, role, join_date, bank_name, account_holder, account_number, branch_code)
+//        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+//       [memberId, name, idNumber, phone, email, hashedPassword, status || 'Active', role || 'member', joinDate, bankName, accountHolder, accountNumber, branchCode]
+//     );
+
+//     res.status(201).json({ id: memberId, message: 'Member created successfully' });
+//   } catch (error) {
+//     console.error('Error creating member:', error);
+//     if (error.code === '23505') { // Unique violation
+//       res.status(400).json({ error: 'Email already exists' });
+//     } else {
+//       res.status(500).json({ error: 'Failed to create member' });
+//     }
+//   }
+// });
+
+
+// Add new member (admin only)
 app.post('/api/members', authenticateToken, isAdmin, async (req, res) => {
+  const client = await pool.connect(); // use a client for transaction
   try {
+    await client.query('BEGIN');
+
     const { name, idNumber, phone, email, password, status, role, bankName, accountHolder, accountNumber, branchCode } = req.body;
 
-    // Generate member ID
-    const countResult = await pool.query('SELECT COUNT(*) FROM members');
-    const memberCount = parseInt(countResult.rows[0].count) + 1;
-    const memberId = `PHSC2601${String(memberCount).padStart(3, '0')}`;
-    
+    // 1️⃣ Generate PHSC-style ID with gap-filling
+    const gapResult = await client.query(`
+      SELECT MIN(num) AS next_num
+      FROM generate_series(1, 999) num
+      WHERE num NOT IN (
+        SELECT RIGHT(id, 3)::int
+        FROM members
+      )
+    `);
+
+    const nextNum = gapResult.rows[0].next_num;
+    if (!nextNum) {
+      await client.query('ROLLBACK');
+      return res.status(500).json({ error: 'No available member numbers' });
+    }
+    const memberId = `PHSC2601${String(nextNum).padStart(3, '0')}`;
+
+    // 2️⃣ Hash the password
     const hashedPassword = await bcrypt.hash(password || 'member123', 10);
+
+    // 3️⃣ Set join date
     const joinDate = new Date().toISOString().split('T')[0];
 
-    await pool.query(
-      `INSERT INTO members (id, name, id_number, phone, email, password, status, role, join_date, bank_name, account_holder, account_number, branch_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [memberId, name, idNumber, phone, email, hashedPassword, status || 'Active', role || 'member', joinDate, bankName, accountHolder, accountNumber, branchCode]
+    // 4️⃣ Insert the member
+    await client.query(
+      `INSERT INTO members 
+       (id, name, id_number, phone, email, password, status, role, join_date,
+        bank_name, account_holder, account_number, branch_code)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [memberId, name, idNumber, phone, email, hashedPassword, status || 'Active', role || 'member', joinDate,
+       bankName, accountHolder, accountNumber, branchCode]
     );
 
+    await client.query('COMMIT');
+
     res.status(201).json({ id: memberId, message: 'Member created successfully' });
+
   } catch (error) {
+    await client.query('ROLLBACK');
     console.error('Error creating member:', error);
-    if (error.code === '23505') { // Unique violation
-      res.status(400).json({ error: 'Email already exists' });
-    } else {
-      res.status(500).json({ error: 'Failed to create member' });
+
+    if (error.code === '23505') { // unique violation
+      if (error.constraint === 'members_email_key') {
+        return res.status(409).json({ error: 'Email already exists' });
+      }
+      if (error.constraint === 'members_pkey') {
+        return res.status(409).json({ error: 'Member ID already exists' });
+      }
     }
+
+    res.status(500).json({ error: 'Failed to create member' });
+  } finally {
+    client.release();
   }
 });
+
 
 // Update member (admin only)
 app.put('/api/members/:id', authenticateToken, isAdmin, async (req, res) => {
