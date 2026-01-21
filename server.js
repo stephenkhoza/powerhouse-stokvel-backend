@@ -34,8 +34,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-
-
 app.use(bodyParser.json());
 
 // Initialize database on startup
@@ -373,6 +371,90 @@ app.put('/api/contributions/:id', authenticateToken, isAdmin, async (req, res) =
     res.status(500).json({ error: 'Failed to update contribution' });
   }
 });
+
+
+//
+
+
+
+
+
+
+//
+
+
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const uploadDir = path.join(__dirname, 'uploads/proofs');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: uploadDir,
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `contribution_${req.params.id}_${Date.now()}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+    cb(null, allowed.includes(file.mimetype));
+  }
+});
+
+
+/**
+ * Upload proof of payment
+ */
+app.post(
+  '/api/contributions/:id/proof',
+  authenticateToken,
+  upload.single('proof'),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      const proofData = {
+        url: `/uploads/proofs/${req.file.filename}`,
+        name: req.file.originalname,
+        type: req.file.mimetype,
+        size: req.file.size,
+        uploaded_at: new Date().toISOString()
+      };
+
+      const result = await pool.query(
+        `UPDATE contributions
+         SET proof_of_payment = $1,
+    status = 'Pending',
+    updated_at = CURRENT_TIMESTAMP
+
+         WHERE id = $2
+         RETURNING proof_of_payment`,
+        [proofData, id]
+      );
+
+      res.json({ proof_of_payment: result.rows[0].proof_of_payment });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Upload failed' });
+    }
+  }
+);
+
+app.use('/uploads', express.static('uploads'));
+
+
 // ==================== ANNOUNCEMENT ROUTES ====================
 
 // Get all announcements
