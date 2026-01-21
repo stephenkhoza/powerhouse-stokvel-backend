@@ -449,23 +449,86 @@ const upload = multer({
 /**
  * Upload proof of payment
  */
+// app.post('/api/contributions/:id/proof', authenticateToken, upload.single('proof'), async (req, res) => {
+//   try {
+//     const { id } = req.params;
+
+//     if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'No file uploaded' });
+
+
+//     const resourceType = req.file.mimetype === 'application/pdf' ? 'raw' : 'auto';
+
+//     const result = await new Promise((resolve, reject) => {
+//       const stream = cloudinary.uploader.upload_stream(
+//         {
+//           folder: 'proofs',
+//           resource_type: resourceType,
+//           public_id: `contribution_${id}_${Date.now()}`,
+//           type: 'upload',   // public URL
+//           // flags: 'attachment' <-- remove this if you want PDFs to open in browser
+//         },
+//         (error, uploaded) => {
+//           if (error) {
+//             console.error('Cloudinary error:', error);
+//             return reject(error);
+//           }
+//           resolve(uploaded);
+//         }
+//       );
+//       streamifier.createReadStream(req.file.buffer).pipe(stream);
+//     });
+
+
+//     const proofData = {
+//       url: result.secure_url,
+//       name: req.file.originalname,
+//       type: req.file.mimetype,
+//       size: req.file.size,
+//       uploaded_at: new Date().toISOString(),
+//     };
+
+//     const dbResult = await pool.query(
+//       `UPDATE contributions
+//        SET proof_of_payment = $1,
+//            status = 'Pending',
+//            updated_at = CURRENT_TIMESTAMP
+//        WHERE id = $2
+//        RETURNING proof_of_payment`,
+//       [proofData, id]
+//     );
+
+//     if (dbResult.rows.length === 0) {
+//       return res.status(404).json({ error: 'Contribution not found' });
+//     }
+
+//     res.json({ proof_of_payment: dbResult.rows[0].proof_of_payment });
+//   } catch (err) {
+//     console.error('Upload failed:', err);
+//     res.status(500).json({ error: 'Upload failed' });
+//   }
+// });
+
+
+
 app.post('/api/contributions/:id/proof', authenticateToken, upload.single('proof'), async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'No file uploaded' });
+    if (!req.file || !req.file.buffer) 
+      return res.status(400).json({ error: 'No file uploaded' });
 
+    // Determine resource type
+    const resourceType = req.file.mimetype === 'pdf' ? 'raw' : 'auto';
 
-    const resourceType = req.file.mimetype === 'application/pdf' ? 'raw' : 'auto';
-
+    // Upload to Cloudinary
     const result = await new Promise((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
           folder: 'proofs',
           resource_type: resourceType,
           public_id: `contribution_${id}_${Date.now()}`,
-          type: 'upload',   // public URL
-          // flags: 'attachment' <-- remove this if you want PDFs to open in browser
+          type: 'upload', // public URL
+          // key change: remove flags to let PDFs open in browser
         },
         (error, uploaded) => {
           if (error) {
@@ -478,7 +541,7 @@ app.post('/api/contributions/:id/proof', authenticateToken, upload.single('proof
       streamifier.createReadStream(req.file.buffer).pipe(stream);
     });
 
-
+    // Save proof data in DB
     const proofData = {
       url: result.secure_url,
       name: req.file.originalname,
@@ -501,7 +564,8 @@ app.post('/api/contributions/:id/proof', authenticateToken, upload.single('proof
       return res.status(404).json({ error: 'Contribution not found' });
     }
 
-    res.json({ proof_of_payment: dbResult.rows[0].proof_of_payment });
+    // Return the URL to frontend
+    res.json({ proof_of_payment: dbResult.rows[0].proof_of_payment, url: result.secure_url });
   } catch (err) {
     console.error('Upload failed:', err);
     res.status(500).json({ error: 'Upload failed' });
