@@ -2,8 +2,23 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
+const cloudinary = require('cloudinary').v2;
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const streamifier = require('streamifier'); // ✅ add here
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
+
+// Configure Cloudinary
+
+cloudinary.config({
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.CLOUD_API_KEY,
+  api_secret: process.env.CLOUD_API_SECRET,
+  secure: true
+});
+
 
 const pool = require('./database');
 const { initializeDatabase } = require('./init-database');
@@ -11,6 +26,8 @@ const { initializeDatabase } = require('./init-database');
 const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
+
+
 
 
 const allowedOrigins = [
@@ -291,23 +308,6 @@ app.get('/api/contributions', authenticateToken, async (req, res) => {
 });
 
 // Add contribution (admin only)
-// app.post('/api/contributions', authenticateToken, isAdmin, async (req, res) => {
-//   try {
-//     const { memberId, month, amount, status, date } = req.body;
-
-//     const result = await pool.query(
-//       'INSERT INTO contributions (member_id, month, amount, status, payment_date) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-//       [memberId, month, amount, status || 'Pending', date]
-//     );
-
-//     res.status(201).json({ id: result.rows[0].id, message: 'Contribution created successfully' });
-//   } catch (error) {
-//     console.error('Error creating contribution:', error);
-//     res.status(500).json({ error: 'Failed to create contribution' });
-//   }
-// });
-
-// Add contribution (admin only)
 app.post('/api/contributions', authenticateToken, isAdmin, async (req, res) => {
   try {
     const { memberId, month, amount, status } = req.body;
@@ -326,26 +326,6 @@ app.post('/api/contributions', authenticateToken, isAdmin, async (req, res) => {
     res.status(500).json({ error: 'Failed to create contribution' });
   }
 });
-
-// Update contribution status (admin only)
-// app.put('/api/contributions/:id', authenticateToken, isAdmin, async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const { status } = req.body;
-//     const date = status === 'Paid' ? new Date().toISOString().split('T')[0] : null;
-
-//     await pool.query(
-//       'UPDATE contributions SET status = $1, payment_date = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
-//       [status, date, id]
-//     );
-
-//     res.json({ message: 'Contribution updated successfully' });
-//   } catch (error) {
-//     console.error('Error updating contribution:', error);
-//     res.status(500).json({ error: 'Failed to update contribution' });
-//   }
-// });
-
 
 // Update contribution status (admin only)
 app.put('/api/contributions/:id', authenticateToken, isAdmin, async (req, res) => {
@@ -380,79 +360,140 @@ app.put('/api/contributions/:id', authenticateToken, isAdmin, async (req, res) =
 
 
 
-//
+// //
 
 
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+// const uploadDir = path.join(__dirname, 'uploads/proofs');
+// if (!fs.existsSync(uploadDir)) {
+//   fs.mkdirSync(uploadDir, { recursive: true });
+// }
 
-const uploadDir = path.join(__dirname, 'uploads/proofs');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+// const storage = multer.diskStorage({
+//   destination: uploadDir,
+//   filename: (req, file, cb) => {
+//     const ext = path.extname(file.originalname);
+//     cb(null, `contribution_${req.params.id}_${Date.now()}${ext}`);
+//   }
+// });
 
-const storage = multer.diskStorage({
-  destination: uploadDir,
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `contribution_${req.params.id}_${Date.now()}${ext}`);
-  }
-});
+// const upload = multer({
+//   storage,
+//   limits: { fileSize: 5 * 1024 * 1024 },
+//   fileFilter: (req, file, cb) => {
+//     const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+//     cb(null, allowed.includes(file.mimetype));
+//   }
+// });
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
-    cb(null, allowed.includes(file.mimetype));
-  }
-});
+
+// /**
+//  * Upload proof of payment
+//  */
+// app.post(
+//   '/api/contributions/:id/proof',
+//   authenticateToken,
+//   upload.single('proof'),
+//   async (req, res) => {
+//     try {
+//       const { id } = req.params;
+
+//       if (!req.file) {
+//         return res.status(400).json({ error: 'No file uploaded' });
+//       }
+
+//       const proofData = {
+//         url: `/uploads/proofs/${req.file.filename}`,
+//         name: req.file.originalname,
+//         type: req.file.mimetype,
+//         size: req.file.size,
+//         uploaded_at: new Date().toISOString()
+//       };
+
+//       const result = await pool.query(
+//         `UPDATE contributions
+//          SET proof_of_payment = $1,
+//     status = 'Pending',
+//     updated_at = CURRENT_TIMESTAMP
+
+//          WHERE id = $2
+//          RETURNING proof_of_payment`,
+//         [proofData, id]
+//       );
+
+//       res.json({ proof_of_payment: result.rows[0].proof_of_payment });
+//     } catch (err) {
+//       console.error(err);
+//       res.status(500).json({ error: 'Upload failed' });
+//     }
+//   }
+// );
+
+// app.use('/uploads', express.static('uploads'));
+
+
 
 
 /**
  * Upload proof of payment
  */
-app.post(
-  '/api/contributions/:id/proof',
-  authenticateToken,
-  upload.single('proof'),
-  async (req, res) => {
-    try {
-      const { id } = req.params;
+app.post('/api/contributions/:id/proof', authenticateToken, upload.single('proof'), async (req, res) => {
+  try {
+    const { id } = req.params;
 
-      if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
+    if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'No file uploaded' });
 
-      const proofData = {
-        url: `/uploads/proofs/${req.file.filename}`,
-        name: req.file.originalname,
-        type: req.file.mimetype,
-        size: req.file.size,
-        uploaded_at: new Date().toISOString()
-      };
 
-      const result = await pool.query(
-        `UPDATE contributions
-         SET proof_of_payment = $1,
-    status = 'Pending',
-    updated_at = CURRENT_TIMESTAMP
+    const resourceType = req.file.mimetype === 'application/pdf' ? 'raw' : 'auto';
 
-         WHERE id = $2
-         RETURNING proof_of_payment`,
-        [proofData, id]
+    const result = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'proofs',
+          resource_type: resourceType,
+          public_id: `contribution_${id}_${Date.now()}`,
+          type: 'upload',   // public URL
+          // flags: 'attachment' <-- remove this if you want PDFs to open in browser
+        },
+        (error, uploaded) => {
+          if (error) {
+            console.error('Cloudinary error:', error);
+            return reject(error);
+          }
+          resolve(uploaded);
+        }
       );
+      streamifier.createReadStream(req.file.buffer).pipe(stream);
+    });
 
-      res.json({ proof_of_payment: result.rows[0].proof_of_payment });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: 'Upload failed' });
+
+    const proofData = {
+      url: result.secure_url,
+      name: req.file.originalname,
+      type: req.file.mimetype,
+      size: req.file.size,
+      uploaded_at: new Date().toISOString(),
+    };
+
+    const dbResult = await pool.query(
+      `UPDATE contributions
+       SET proof_of_payment = $1,
+           status = 'Pending',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2
+       RETURNING proof_of_payment`,
+      [proofData, id]
+    );
+
+    if (dbResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Contribution not found' });
     }
-  }
-);
 
-app.use('/uploads', express.static('uploads'));
+    res.json({ proof_of_payment: dbResult.rows[0].proof_of_payment });
+  } catch (err) {
+    console.error('Upload failed:', err);
+    res.status(500).json({ error: 'Upload failed' });
+  }
+});
 
 
 // ==================== ANNOUNCEMENT ROUTES ====================
