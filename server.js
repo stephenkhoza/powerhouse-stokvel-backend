@@ -576,6 +576,54 @@ app.post(
   }
 );
 
+
+
+// DELETE /api/profile/photo - Delete profile photo
+app.delete('/api/profile/photo', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get current user's photo URL
+    const result = await pool.query('SELECT photo FROM members WHERE id = $1', [userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = result.rows[0];
+
+    // If user has a photo on Cloudinary, delete it
+    if (user.photo) {
+      try {
+        // Extract public_id from Cloudinary URL
+        // Example URL: https://res.cloudinary.com/xxx/image/upload/v1234/profile_photos/user_PHSC2601001.jpg
+        const urlParts = user.photo.split('/');
+        const filename = urlParts[urlParts.length - 1].split('.')[0]; // Get filename without extension
+        const folder = urlParts[urlParts.length - 2]; // Get folder name
+        const publicId = `${folder}/${filename}`; // Combine folder/filename
+
+        // Delete from Cloudinary
+        await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+        console.log(`Deleted photo from Cloudinary: ${publicId}`);
+      } catch (err) {
+        console.error('Error deleting photo from Cloudinary:', err);
+        // Continue anyway to update database
+      }
+    }
+
+    // Update database to remove photo
+    await pool.query('UPDATE members SET photo = NULL WHERE id = $1', [userId]);
+
+    res.json({ 
+      message: 'Photo deleted successfully',
+      photo: null 
+    });
+  } catch (error) {
+    console.error('Error deleting photo:', error);
+    res.status(500).json({ error: 'Failed to delete photo' });
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
