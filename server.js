@@ -157,36 +157,6 @@ app.get('/api/members/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Add new member (admin only)
-// app.post('/api/members', authenticateToken, isAdmin, async (req, res) => {
-//   try {
-//     const { name, idNumber, phone, email, password, status, role, bankName, accountHolder, accountNumber, branchCode } = req.body;
-
-//     // Generate member ID
-//     const countResult = await pool.query('SELECT COUNT(*) FROM members');
-//     const memberCount = parseInt(countResult.rows[0].count) + 1;
-//     const memberId = `PHSC2601${String(memberCount).padStart(3, '0')}`;
-    
-//     const hashedPassword = await bcrypt.hash(password || 'member123', 10);
-//     const joinDate = new Date().toISOString().split('T')[0];
-
-//     await pool.query(
-//       `INSERT INTO members (id, name, id_number, phone, email, password, status, role, join_date, bank_name, account_holder, account_number, branch_code)
-//        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-//       [memberId, name, idNumber, phone, email, hashedPassword, status || 'Active', role || 'member', joinDate, bankName, accountHolder, accountNumber, branchCode]
-//     );
-
-//     res.status(201).json({ id: memberId, message: 'Member created successfully' });
-//   } catch (error) {
-//     console.error('Error creating member:', error);
-//     if (error.code === '23505') { // Unique violation
-//       res.status(400).json({ error: 'Email already exists' });
-//     } else {
-//       res.status(500).json({ error: 'Failed to create member' });
-//     }
-//   }
-// });
-
 
 // Add new member (admin only)
 app.post('/api/members', authenticateToken, isAdmin, async (req, res) => {
@@ -352,85 +322,7 @@ app.put('/api/contributions/:id', authenticateToken, isAdmin, async (req, res) =
   }
 });
 
-
-//
-
-
-
-
-
-
-// //
-
-
-// const uploadDir = path.join(__dirname, 'uploads/proofs');
-// if (!fs.existsSync(uploadDir)) {
-//   fs.mkdirSync(uploadDir, { recursive: true });
-// }
-
-// const storage = multer.diskStorage({
-//   destination: uploadDir,
-//   filename: (req, file, cb) => {
-//     const ext = path.extname(file.originalname);
-//     cb(null, `contribution_${req.params.id}_${Date.now()}${ext}`);
-//   }
-// });
-
-// const upload = multer({
-//   storage,
-//   limits: { fileSize: 5 * 1024 * 1024 },
-//   fileFilter: (req, file, cb) => {
-//     const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
-//     cb(null, allowed.includes(file.mimetype));
-//   }
-// });
-
-
-// /**
-//  * Upload proof of payment
-//  */
-// app.post(
-//   '/api/contributions/:id/proof',
-//   authenticateToken,
-//   upload.single('proof'),
-//   async (req, res) => {
-//     try {
-//       const { id } = req.params;
-
-//       if (!req.file) {
-//         return res.status(400).json({ error: 'No file uploaded' });
-//       }
-
-//       const proofData = {
-//         url: `/uploads/proofs/${req.file.filename}`,
-//         name: req.file.originalname,
-//         type: req.file.mimetype,
-//         size: req.file.size,
-//         uploaded_at: new Date().toISOString()
-//       };
-
-//       const result = await pool.query(
-//         `UPDATE contributions
-//          SET proof_of_payment = $1,
-//     status = 'Pending',
-//     updated_at = CURRENT_TIMESTAMP
-
-//          WHERE id = $2
-//          RETURNING proof_of_payment`,
-//         [proofData, id]
-//       );
-
-//       res.json({ proof_of_payment: result.rows[0].proof_of_payment });
-//     } catch (err) {
-//       console.error(err);
-//       res.status(500).json({ error: 'Upload failed' });
-//     }
-//   }
-// );
-
-// app.use('/uploads', express.static('uploads'));
-
-
+// Multer setup for file uploads
 const storage = multer.memoryStorage();
 
 const upload = multer({
@@ -445,71 +337,7 @@ const upload = multer({
   }
 });
 
-
-/**
- * Upload proof of payment
- */
-// app.post('/api/contributions/:id/proof', authenticateToken, upload.single('proof'), async (req, res) => {
-//   try {
-//     const { id } = req.params;
-
-//     if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'No file uploaded' });
-
-
-//     const resourceType = req.file.mimetype === 'application/pdf' ? 'raw' : 'auto';
-
-//     const result = await new Promise((resolve, reject) => {
-//       const stream = cloudinary.uploader.upload_stream(
-//         {
-//           folder: 'proofs',
-//           resource_type: resourceType,
-//           public_id: `contribution_${id}_${Date.now()}`,
-//           type: 'upload',   // public URL
-//           // flags: 'attachment' <-- remove this if you want PDFs to open in browser
-//         },
-//         (error, uploaded) => {
-//           if (error) {
-//             console.error('Cloudinary error:', error);
-//             return reject(error);
-//           }
-//           resolve(uploaded);
-//         }
-//       );
-//       streamifier.createReadStream(req.file.buffer).pipe(stream);
-//     });
-
-
-//     const proofData = {
-//       url: result.secure_url,
-//       name: req.file.originalname,
-//       type: req.file.mimetype,
-//       size: req.file.size,
-//       uploaded_at: new Date().toISOString(),
-//     };
-
-//     const dbResult = await pool.query(
-//       `UPDATE contributions
-//        SET proof_of_payment = $1,
-//            status = 'Pending',
-//            updated_at = CURRENT_TIMESTAMP
-//        WHERE id = $2
-//        RETURNING proof_of_payment`,
-//       [proofData, id]
-//     );
-
-//     if (dbResult.rows.length === 0) {
-//       return res.status(404).json({ error: 'Contribution not found' });
-//     }
-
-//     res.json({ proof_of_payment: dbResult.rows[0].proof_of_payment });
-//   } catch (err) {
-//     console.error('Upload failed:', err);
-//     res.status(500).json({ error: 'Upload failed' });
-//   }
-// });
-
-
-
+// Upload proof of payment
 app.post('/api/contributions/:id/proof', authenticateToken, upload.single('proof'), async (req, res) => {
   try {
     const { id } = req.params;
@@ -572,6 +400,54 @@ app.post('/api/contributions/:id/proof', authenticateToken, upload.single('proof
   }
 });
 
+
+// Upload profile photo
+app.post(
+  '/api/profile/photo',
+  authenticateToken,
+  upload.single('photo'),
+  async (req, res) => {
+    try {
+      if (!req.file || !req.file.buffer) {
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
+
+      const userId = req.user.id;
+
+      const uploadResult = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder: 'profile_photos',
+            public_id: `user_${userId}`,
+            overwrite: true,
+            resource_type: 'image',
+          },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        );
+
+        stream.end(req.file.buffer);
+      });
+
+      await pool.query(
+        'UPDATE members SET photo = $1 WHERE id = $2',
+        [uploadResult.secure_url, userId]
+      );
+
+
+      res.json({
+        message: 'Profile photo updated',
+        photo: uploadResult.secure_url,
+      });
+
+    } catch (err) {
+      console.error('Profile upload failed:', err);
+      res.status(500).json({ error: 'Failed to upload profile photo' });
+    }
+  }
+);
 
 // ==================== ANNOUNCEMENT ROUTES ====================
 
@@ -644,6 +520,61 @@ app.get('/api/stats/:memberId', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Database error' });
   }
 });
+
+
+// Change password (member/admin)
+app.post(
+  "/api/members/change-password",
+  authenticateToken,
+  async (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+    const memberId = req.user.id;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        error: "Password must be at least 8 characters long",
+      });
+    }
+
+    try {
+      // 1️⃣ Get existing password hash
+      const result = await pool.query(
+        "SELECT password FROM members WHERE id = $1",
+        [memberId]
+      );
+
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: "Member not found" });
+      }
+
+      const storedHash = result.rows[0].password;
+
+      // 2️⃣ Compare current password
+      const valid = await bcrypt.compare(currentPassword, storedHash);
+      if (!valid) {
+        return res.status(401).json({ error: "Current password is incorrect" });
+      }
+
+      // 3️⃣ Hash new password
+      const newHash = await bcrypt.hash(newPassword, 10);
+
+      // 4️⃣ Update password
+      await pool.query(
+        "UPDATE members SET password = $1 WHERE id = $2",
+        [newHash, memberId]
+      );
+
+      res.json({ message: "Password updated successfully" });
+    } catch (err) {
+      console.error("Change password error:", err);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
