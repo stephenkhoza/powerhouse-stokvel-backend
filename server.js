@@ -11,14 +11,12 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 // Configure Cloudinary
-
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
   api_key: process.env.CLOUD_API_KEY,
   api_secret: process.env.CLOUD_API_SECRET,
   secure: true
 });
-
 
 const pool = require('./database');
 const { initializeDatabase } = require('./init-database');
@@ -28,35 +26,115 @@ const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
 
-
-
 const allowedOrigins = [
-  'http://localhost:5173', // your local dev frontend
-  'https://powerhouse-stokvel-frontend.vercel.app', // replace with your live frontend URL 
+  'http://localhost:5173', // local dev (Vite)
+  'http://localhost:3000', // optional (React)
+  'https://powerhouse-stokvel-frontend.vercel.app',
   'https://powerhouse-stokvel-frontend-1ly5.vercel.app'
 ];
 
+
+
+// ==================== SOCKET.IO SETUP ====================
+// const io = new Server(server, {
+//      cors: {
+//        origin: ['http://localhost:3000', 'http://localhost:5173'], // Allow both ports
+//        methods: ['GET', 'POST', 'PUT', 'DELETE'],
+//        credentials: true
+//      }
+//    });
+
+
+   const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ['GET', 'POST','PUT', 'DELETE'],
+    credentials: true
+  }
+});
+
+
+// Make io accessible in routes
+
+
+// const corsOptions = {
+//   origin: function (origin, callback) {
+//     // allow requests with no origin (like mobile apps or curl)
+//     if (!origin) return callback(null, true);
+//     if (allowedOrigins.indexOf(origin) === -1) {
+//       const msg = `CORS policy: This origin (${origin}) is not allowed.`;
+//       return callback(new Error(msg), false);
+//     }
+//     return callback(null, true);
+//   },
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+//   credentials: true // allow cookies/auth headers
+// };
+
+// app.use(cors(corsOptions));
+// app.use(bodyParser.json());
+
+
 const corsOptions = {
   origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl)
+    // Allow non-browser requests (Postman, curl, mobile apps)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = `CORS policy: This origin (${origin}) is not allowed.`;
-      return callback(new Error(msg), false);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
     }
-    return callback(null, true);
+
+    console.error(`❌ CORS blocked origin: ${origin}`);
+    return callback(new Error(`CORS policy: ${origin} not allowed`), false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  credentials: true // allow cookies/auth headers
+  credentials: true
 };
 
 app.use(cors(corsOptions));
 app.use(bodyParser.json());
 
+// To get real client IP when behind proxies (e.g., Heroku, Vercel)
+app.set('trust proxy', 1);
+
+
 // Initialize database on startup
 initializeDatabase().catch(err => {
   console.error('Failed to initialize database:', err);
   process.exit(1);
+});
+
+// ==================== SOCKET.IO HANDLERS ====================
+const connectedUsers = new Map(); // Store userId -> socketId mapping
+
+io.on('connection', (socket) => {
+  console.log('🔌 User connected:', socket.id);
+
+  socket.on('join_chat', (userId) => {
+    socket.userId = userId;
+    connectedUsers.set(userId, socket.id);
+    console.log(`👤 User ${userId} joined chat`);
+    
+    // Broadcast user count
+    io.emit('users_online', connectedUsers.size);
+  });
+
+  socket.on('typing', ({ userId, name }) => {
+    socket.broadcast.emit('user_typing', { userId, name });
+  });
+
+  socket.on('stop_typing', ({ userId }) => {
+    socket.broadcast.emit('user_stop_typing', { userId });
+  });
+
+  socket.on('disconnect', () => {
+    if (socket.userId) {
+      connectedUsers.delete(socket.userId);
+      io.emit('users_online', connectedUsers.size);
+      console.log(`👋 User ${socket.userId} disconnected`);
+    }
+    console.log('🔌 Socket disconnected:', socket.id);
+  });
 });
 
 // ==================== MIDDLEWARE ====================
@@ -449,6 +527,52 @@ app.post(
   }
 );
 
+// DELETE /api/profile/photo - Delete profile photo
+app.delete('/api/profile/photo', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Get current user's photo URL
+    const result = await pool.query('SELECT photo FROM members WHERE id = $1', [userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = result.rows[0];
+
+    // If user has a photo on Cloudinary, delete it
+    if (user.photo) {
+      try {
+        // Extract public_id from Cloudinary URL
+        // Example URL: https://res.cloudinary.com/xxx/image/upload/v1234/profile_photos/user_PHSC2601001.jpg
+        const urlParts = user.photo.split('/');
+        const filename = urlParts[urlParts.length - 1].split('.')[0]; // Get filename without extension
+        const folder = urlParts[urlParts.length - 2]; // Get folder name
+        const publicId = `${folder}/${filename}`; // Combine folder/filename
+
+        // Delete from Cloudinary
+        await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+        console.log(`Deleted photo from Cloudinary: ${publicId}`);
+      } catch (err) {
+        console.error('Error deleting photo from Cloudinary:', err);
+        // Continue anyway to update database
+      }
+    }
+
+    // Update database to remove photo
+    await pool.query('UPDATE members SET photo = NULL WHERE id = $1', [userId]);
+
+    res.json({ 
+      message: 'Photo deleted successfully',
+      photo: null 
+    });
+  } catch (error) {
+    console.error('Error deleting photo:', error);
+    res.status(500).json({ error: 'Failed to delete photo' });
+  }
+});
+
 // ==================== ANNOUNCEMENT ROUTES ====================
 
 // Get all announcements
@@ -576,53 +700,168 @@ app.post(
   }
 );
 
+// ==================== CHAT ROUTES WITH WEBSOCKET ====================
 
-
-// DELETE /api/profile/photo - Delete profile photo
-app.delete('/api/profile/photo', authenticateToken, async (req, res) => {
+// GET messages with pagination
+app.get('/api/chat/messages', authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = parseInt(req.query.offset) || 0;
 
-    // Get current user's photo URL
-    const result = await pool.query('SELECT photo FROM members WHERE id = $1', [userId]);
+    const result = await pool.query(`
+      SELECT 
+        m.id,
+        m.message,
+        m.created_at,
+        m.sender_id,
+        mem.name AS sender_name,
+        mem.photo AS sender_photo
+      FROM messages m
+      JOIN members mem ON mem.id = m.sender_id
+      ORDER BY m.created_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const user = result.rows[0];
-
-    // If user has a photo on Cloudinary, delete it
-    if (user.photo) {
-      try {
-        // Extract public_id from Cloudinary URL
-        // Example URL: https://res.cloudinary.com/xxx/image/upload/v1234/profile_photos/user_PHSC2601001.jpg
-        const urlParts = user.photo.split('/');
-        const filename = urlParts[urlParts.length - 1].split('.')[0]; // Get filename without extension
-        const folder = urlParts[urlParts.length - 2]; // Get folder name
-        const publicId = `${folder}/${filename}`; // Combine folder/filename
-
-        // Delete from Cloudinary
-        await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
-        console.log(`Deleted photo from Cloudinary: ${publicId}`);
-      } catch (err) {
-        console.error('Error deleting photo from Cloudinary:', err);
-        // Continue anyway to update database
-      }
-    }
-
-    // Update database to remove photo
-    await pool.query('UPDATE members SET photo = NULL WHERE id = $1', [userId]);
-
-    res.json({ 
-      message: 'Photo deleted successfully',
-      photo: null 
-    });
+    // Reverse to show oldest first
+    res.json(result.rows.reverse());
   } catch (error) {
-    console.error('Error deleting photo:', error);
-    res.status(500).json({ error: 'Failed to delete photo' });
+    console.error('Fetch chat messages error:', error);
+    res.status(500).json({ error: 'Failed to fetch messages' });
   }
 });
+
+// POST message with WebSocket emit
+// app.post('/api/chat/messages', authenticateToken, async (req, res) => {
+//   try {
+//     const { message } = req.body;
+
+//     if (!message?.trim()) {
+//       return res.status(400).json({ error: 'Message required' });
+//     }
+
+//     const result = await pool.query(
+//       `INSERT INTO messages (sender_id, message)
+//        VALUES ($1, $2)
+//        RETURNING id, sender_id, message, created_at`,
+//       [req.user.id, toString(),message]
+//     );
+
+//     const newMessage = {
+//       ...result.rows[0],
+//       sender_name: req.user.name,
+//       sender_photo: req.user.photo || null
+//     };
+
+//     // Emit to all connected clients via WebSocket
+//     req.io.emit('new_message', newMessage);
+
+//     res.json(newMessage);
+//   } catch (err) {
+//     console.error('Send message error:', err);
+//     res.status(500).json({ error: 'Failed to send message' });
+//   }
+// });
+
+app.post('/api/chat/messages', authenticateToken, async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!message?.trim()) {
+      return res.status(400).json({ error: 'Message required' });
+    }
+
+    const senderId = req.user.id.toString(); // ensure string if DB expects text
+
+    const result = await pool.query(
+      `INSERT INTO messages (sender_id, message)
+       VALUES ($1, $2)
+       RETURNING id, sender_id, message, created_at`,
+      [senderId, message]
+    );
+
+    const newMessage = {
+      ...result.rows[0],
+      sender_name: req.user.name,
+      sender_photo: req.user.photo || null
+    };
+
+    req.io.emit('new_message', newMessage);
+
+    res.json(newMessage);
+  } catch (err) {
+    console.error('Send message error:', err);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+
+// DELETE message
+// app.delete('/api/chat/messages/:id', authenticateToken, async (req, res) => {
+//   try {
+//     const { id } = req.params;
+    
+//     // Check if user owns the message
+//     const check = await pool.query(
+//       'SELECT sender_id FROM messages WHERE id = $1',
+//       [id]
+//     );
+
+//     if (check.rows.length === 0) {
+//       return res.status(404).json({ error: 'Message not found' });
+//     }
+
+//     if (check.rows[0].sender_id !== req.user.id && req.user.role !== 'admin') {
+//       return res.status(403).json({ error: 'Unauthorized' });
+//     }
+
+//     await pool.query('DELETE FROM messages WHERE id = $1', [id]);
+    
+//     // Emit deletion event
+//     req.io.emit('message_deleted', { id });
+    
+//     res.json({ success: true });
+//   } catch (err) {
+//     console.error('Delete message error:', err);
+//     res.status(500).json({ error: 'Failed to delete message' });
+//   }
+// });
+
+app.delete('/api/chat/messages/:id', authenticateToken, async (req, res) => {
+  try {
+    const messageId = parseInt(req.params.id); // ensure integer
+
+    // Fetch the message to check ownership
+    const check = await pool.query(
+      'SELECT sender_id FROM messages WHERE id = $1',
+      [messageId]
+    );
+
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    const senderId = check.rows[0].sender_id;
+
+    // Compare as strings to avoid type issues
+    if (senderId.toString() !== req.user.id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    // Delete message
+    await pool.query('DELETE FROM messages WHERE id = $1', [messageId]);
+
+    // Emit WebSocket deletion
+    req.io.emit('message_deleted', { id: messageId });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete message error:', err);
+    res.status(500).json({ error: 'Failed to delete message' });
+  }
+});
+
+
+
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
