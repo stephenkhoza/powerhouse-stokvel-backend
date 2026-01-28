@@ -710,6 +710,214 @@ app.delete('/api/chat/messages/:id', authenticateToken, async (req, res) => {
   }
 });
 
+
+
+
+
+// ==================== READ RECEIPTS ROUTES - FIXED ====================
+// Add these routes to your server.js file
+// These routes use req.io instead of global.io to avoid undefined errors
+
+// Mark message as read
+app.post('/api/chat/messages/:id/read', authenticateToken, async (req, res) => {
+  try {
+    const messageId = parseInt(req.params.id);
+    const userId = req.user.id;
+
+    // Don't mark own messages as read
+    const messageCheck = await pool.query(
+      'SELECT sender_id FROM messages WHERE id = $1',
+      [messageId]
+    );
+
+    if (messageCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    if (messageCheck.rows[0].sender_id === userId) {
+      return res.json({ message: 'Cannot mark own message as read' });
+    }
+
+    // Insert read receipt
+    await pool.query(
+      `INSERT INTO read_receipts (message_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (message_id, user_id) DO NOTHING`,
+      [messageId, userId]
+    );
+
+    // Emit read receipt to all clients using req.io
+    if (req.io) {
+      req.io.emit('message_read', {
+        messageId,
+        userId,
+        readAt: new Date().toISOString()
+      });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Mark as read error:', err);
+    res.status(500).json({ error: 'Failed to mark as read' });
+  }
+});
+
+// Mark multiple messages as read (bulk operation)
+app.post('/api/chat/messages/bulk-read', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { messageIds } = req.body;
+    const userId = req.user.id;
+
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+      return res.status(400).json({ error: 'messageIds array required' });
+    }
+
+    await client.query('BEGIN');
+
+    // Filter out own messages
+    const ownMessagesResult = await client.query(
+      'SELECT id FROM messages WHERE id = ANY($1) AND sender_id != $2',
+      [messageIds, userId]
+    );
+
+    const validMessageIds = ownMessagesResult.rows.map(row => row.id);
+
+    if (validMessageIds.length > 0) {
+      // Bulk insert read receipts
+      const values = validMessageIds.map((msgId, idx) => 
+        `($${idx * 2 + 1}, $${idx * 2 + 2})`
+      ).join(',');
+      
+      const params = validMessageIds.flatMap(msgId => [msgId, userId]);
+
+      await client.query(
+        `INSERT INTO read_receipts (message_id, user_id)
+         VALUES ${values}
+         ON CONFLICT (message_id, user_id) DO NOTHING`,
+        params
+      );
+
+      // Emit bulk read event using req.io
+      if (req.io) {
+        req.io.emit('messages_read_bulk', {
+          messageIds: validMessageIds,
+          userId,
+          readAt: new Date().toISOString()
+        });
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ success: true, markedCount: validMessageIds.length });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Bulk mark as read error:', err);
+    res.status(500).json({ error: 'Failed to mark messages as read' });
+  } finally {
+    client.release();
+  }
+});
+
+// Get read receipts for a message
+app.get('/api/chat/messages/:id/receipts', authenticateToken, async (req, res) => {
+  try {
+    const messageId = parseInt(req.params.id);
+
+    const result = await pool.query(
+      `SELECT 
+        rr.user_id,
+        rr.read_at,
+        m.name as reader_name,
+        m.photo as reader_photo
+       FROM read_receipts rr
+       JOIN members m ON m.id = rr.user_id
+       WHERE rr.message_id = $1
+       ORDER BY rr.read_at DESC`,
+      [messageId]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get receipts error:', err);
+    res.status(500).json({ error: 'Failed to get read receipts' });
+  }
+});
+
+// Get unread message count for current user
+app.get('/api/chat/unread-count', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const result = await pool.query(
+      `SELECT COUNT(*) as unread_count
+       FROM messages m
+       WHERE m.sender_id != $1
+       AND NOT EXISTS (
+         SELECT 1 FROM read_receipts rr 
+         WHERE rr.message_id = m.id AND rr.user_id = $1
+       )`,
+      [userId]
+    );
+
+    res.json({ unreadCount: parseInt(result.rows[0].unread_count) });
+  } catch (err) {
+    console.error('Get unread count error:', err);
+    res.status(500).json({ error: 'Failed to get unread count' });
+  }
+});
+
+// ==================== UPDATED GET MESSAGES WITH READ RECEIPTS ====================
+// Replace your existing /api/chat/messages GET route with this:
+
+app.get('/api/chat/messages', authenticateToken, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = parseInt(req.query.offset) || 0;
+    const currentUserId = req.user.id;
+
+    const result = await pool.query(`
+      SELECT 
+        m.id,
+        m.message,
+        m.created_at,
+        m.sender_id,
+        mem.name AS sender_name,
+        mem.photo AS sender_photo,
+        -- Get read receipts as JSON array
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'userId', rr.user_id,
+              'readAt', rr.read_at,
+              'readerName', reader.name,
+              'readerPhoto', reader.photo
+            )
+          ) FILTER (WHERE rr.user_id IS NOT NULL),
+          '[]'
+        ) as read_receipts,
+        -- Check if current user has read this message
+        EXISTS(
+          SELECT 1 FROM read_receipts 
+          WHERE message_id = m.id AND user_id = $3
+        ) as is_read_by_me
+      FROM messages m
+      JOIN members mem ON mem.id = m.sender_id
+      LEFT JOIN read_receipts rr ON rr.message_id = m.id
+      LEFT JOIN members reader ON reader.id = rr.user_id
+      GROUP BY m.id, mem.name, mem.photo
+      ORDER BY m.created_at DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset, currentUserId]);
+
+    res.json(result.rows.reverse());
+  } catch (error) {
+    console.error('Fetch chat messages error:', error);
+    res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
