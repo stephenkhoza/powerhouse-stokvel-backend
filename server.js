@@ -37,6 +37,7 @@ const server = http.createServer(app);
 
 // ==================== SOCKET.IO SETUP ====================
 const io = new Server(server, {
+   path: '/socket.io', // must match frontend
   cors: {
     origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -44,6 +45,7 @@ const io = new Server(server, {
   },
   transports: ['websocket', 'polling']
 });
+
 
 // Make io globally accessible
 global.io = io;
