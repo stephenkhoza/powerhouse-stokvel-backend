@@ -622,31 +622,7 @@ app.post('/api/members/change-password', authenticateToken, async (req, res) => 
 
 // ==================== CHAT ROUTES WITH WEBSOCKET ====================
 
-app.get('/api/chat/messages', authenticateToken, async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 100;
-    const offset = parseInt(req.query.offset) || 0;
 
-    const result = await pool.query(`
-      SELECT 
-        m.id,
-        m.message,
-        m.created_at,
-        m.sender_id,
-        mem.name AS sender_name,
-        mem.photo AS sender_photo
-      FROM messages m
-      JOIN members mem ON mem.id = m.sender_id
-      ORDER BY m.created_at DESC
-      LIMIT $1 OFFSET $2
-    `, [limit, offset]);
-
-    res.json(result.rows.reverse());
-  } catch (error) {
-    console.error('Fetch chat messages error:', error);
-    res.status(500).json({ error: 'Failed to fetch messages' });
-  }
-});
 
 app.post('/api/chat/messages', authenticateToken, async (req, res) => {
   try {
@@ -930,4 +906,6 @@ server.listen(PORT, () => {
   console.log(`📊 Database: PostgreSQL`);
   console.log(`🔐 JWT Secret: ${JWT_SECRET.substring(0, 10)}...`);
   console.log(`🔌 WebSocket enabled`);
+
+  
 });
