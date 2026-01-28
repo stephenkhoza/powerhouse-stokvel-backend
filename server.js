@@ -1,4 +1,5 @@
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const { Server } = require('socket.io');
 const bodyParser = require('body-parser');
@@ -34,8 +35,8 @@ const allowedOrigins = [
   'https://powerhouse-stokvel-frontend-1ly5.vercel.app'
 ];
 
-
-
+const app = express();
+const server = http.createServer(app);
 // ==================== SOCKET.IO SETUP ====================
 // const io = new Server(server, {
 //      cors: {
