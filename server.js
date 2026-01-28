@@ -13,6 +13,8 @@ const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const cloudinary = require('cloudinary').v2;
 const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const streamifier = require('streamifier');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
@@ -31,6 +33,10 @@ const { initializeDatabase } = require('./init-database');
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
+const app = express();
+const server = http.createServer(app);
+
+// ==================== SOCKET.IO SETUP ====================
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -38,30 +44,16 @@ const allowedOrigins = [
   'https://powerhouse-stokvel-frontend-1ly5.vercel.app'
 ];
 
-// Create Express app and HTTP server
-const app = express();
-const server = http.createServer(app);
-
-// ==================== SOCKET.IO SETUP ====================
-// const io = new Server(server, {
-//    path: '/socket.io', // must match frontend
-//   cors: {
-//     origin: allowedOrigins,
-//     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-//     credentials: true
-//   },
-//   transports: ['websocket', 'polling']
-// });
-
 
 
 const io = new Server(server, {
-  path: '/socket.io',
+  
   cors: {
     origin: ['https://powerhouse-stokvel-frontend.vercel.app'],
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST','PUT', 'DELETE'],
     credentials: true
   },
+  path: '/socket.io',
   transports: ['websocket', 'polling']
 });
 
