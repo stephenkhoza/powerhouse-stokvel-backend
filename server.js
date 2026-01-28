@@ -1,3 +1,10 @@
+// powerhouse-stokvel-app/backend/server.js
+// ==================== POWERHOUSE STOKVEL BACKEND SERVER ====================
+// Technologies: Node.js, Express, PostgreSQL, Socket.IO, JWT, Cloudinary
+// Description: Backend server for Powerhouse Stokvel application handling
+// authentication, member management, contributions, announcements, stats,
+// profile photo uploads, and real-time chat functionality.
+// ===========================================================================
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
@@ -36,15 +43,28 @@ const app = express();
 const server = http.createServer(app);
 
 // ==================== SOCKET.IO SETUP ====================
+// const io = new Server(server, {
+//    path: '/socket.io', // must match frontend
+//   cors: {
+//     origin: allowedOrigins,
+//     methods: ['GET', 'POST', 'PUT', 'DELETE'],
+//     credentials: true
+//   },
+//   transports: ['websocket', 'polling']
+// });
+
+import { Server } from 'socket.io';
+
 const io = new Server(server, {
-   path: '/socket.io', // must match frontend
+  path: '/socket.io',
   cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    origin: ['https://powerhouse-stokvel-frontend.vercel.app/'],
+    methods: ['GET', 'POST'],
     credentials: true
   },
   transports: ['websocket', 'polling']
 });
+
 
 
 // Make io globally accessible
