@@ -8,7 +8,7 @@
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
-
+const { Server } = require('socket.io');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const cloudinary = require('cloudinary').v2;
@@ -49,7 +49,12 @@ const allowedOrigins = [
 const io = new Server(server, {
   
   cors: {
-    origin: ['https://powerhouse-stokvel-frontend.vercel.app'],
+    origin: [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://powerhouse-stokvel-frontend.vercel.app',
+  'https://powerhouse-stokvel-frontend-1ly5.vercel.app'
+],
     methods: ['GET', 'POST','PUT', 'DELETE'],
     credentials: true
   },
@@ -76,9 +81,21 @@ const corsOptions = {
   credentials: true
 };
 
-app.use(cors(corsOptions));
+// Middleware
+app.use(cors());
 app.use(bodyParser.json());
+
+
+app.use(cors(corsOptions));
+
 app.set('trust proxy', 1);
+
+// Attach io to requests
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
+
 
 // Initialize database
 initializeDatabase().catch(err => {
@@ -132,6 +149,7 @@ function authenticateToken(req, res, next) {
   });
 }
 
+// Admin middleware
 function isAdmin(req, res, next) {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Admin access required' });
@@ -207,6 +225,7 @@ app.get('/api/members/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Add new member (admin only)
 app.post('/api/members', authenticateToken, isAdmin, async (req, res) => {
   const client = await pool.connect();
   try {
