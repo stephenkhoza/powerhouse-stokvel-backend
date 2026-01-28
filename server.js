@@ -5,6 +5,10 @@
 // authentication, member management, contributions, announcements, stats,
 // profile photo uploads, and real-time chat functionality.
 // ===========================================================================
+// ==================== POWERHOUSE STOKVEL BACKEND SERVER ====================
+// Technologies: Node.js, Express, PostgreSQL, Socket.IO, JWT, Cloudinary
+// ===========================================================================
+
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
@@ -13,19 +17,9 @@ const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const cloudinary = require('cloudinary').v2;
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const streamifier = require('streamifier');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
-
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUD_NAME,
-  api_key: process.env.CLOUD_API_KEY,
-  api_secret: process.env.CLOUD_API_SECRET,
-  secure: true
-});
 
 const pool = require('./database');
 const { initializeDatabase } = require('./init-database');
@@ -36,6 +30,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 const app = express();
 const server = http.createServer(app);
 
+// ==================== CLOUDINARY CONFIG ====================
+cloudinary.config({
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.CLOUD_API_KEY,
+  api_secret: process.env.CLOUD_API_SECRET,
+  secure: true
+});
+
 // ==================== SOCKET.IO SETUP ====================
 const allowedOrigins = [
   'http://localhost:5173',
@@ -44,36 +46,24 @@ const allowedOrigins = [
   'https://powerhouse-stokvel-frontend-1ly5.vercel.app'
 ];
 
-
-
 const io = new Server(server, {
-  
   cors: {
-    origin: [
-  'http://localhost:5173',
-  'http://localhost:3000',
-  'https://powerhouse-stokvel-frontend.vercel.app',
-  'https://powerhouse-stokvel-frontend-1ly5.vercel.app'
-],
-    methods: ['GET', 'POST','PUT', 'DELETE'],
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
   },
   path: '/socket.io',
   transports: ['websocket', 'polling']
 });
 
-
-
 // Make io globally accessible
 global.io = io;
 
-// CORS configuration
+// ==================== MIDDLEWARE ====================
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
+    if (allowedOrigins.includes(origin)) return callback(null, true);
     console.error(`❌ CORS blocked origin: ${origin}`);
     return callback(new Error(`CORS policy: ${origin} not allowed`), false);
   },
@@ -81,13 +71,8 @@ const corsOptions = {
   credentials: true
 };
 
-// Middleware
-app.use(cors());
-app.use(bodyParser.json());
-
-
 app.use(cors(corsOptions));
-
+app.use(bodyParser.json());
 app.set('trust proxy', 1);
 
 // Attach io to requests
@@ -96,8 +81,7 @@ app.use((req, res, next) => {
   next();
 });
 
-
-// Initialize database
+// ==================== DATABASE INIT ====================
 initializeDatabase().catch(err => {
   console.error('Failed to initialize database:', err);
   process.exit(1);
@@ -112,8 +96,8 @@ io.on('connection', (socket) => {
   socket.on('join_chat', (userId) => {
     socket.userId = userId;
     connectedUsers.set(userId, socket.id);
-    console.log(`👤 User ${userId} joined chat`);
     io.emit('users_online', connectedUsers.size);
+    console.log(`👤 User ${userId} joined chat`);
   });
 
   socket.on('typing', ({ userId, name }) => {
@@ -130,16 +114,13 @@ io.on('connection', (socket) => {
       io.emit('users_online', connectedUsers.size);
       console.log(`👋 User ${socket.userId} disconnected`);
     }
-    console.log('🔌 Socket disconnected:', socket.id);
   });
 });
 
-// ==================== MIDDLEWARE ====================
-
+// ==================== AUTH & MIDDLEWARE ====================
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-
   if (!token) return res.sendStatus(401);
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
@@ -149,13 +130,31 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Admin middleware
 function isAdmin(req, res, next) {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   next();
 }
+
+
+
+
+// ==================== MULTER SETUP ====================
+
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error('Invalid file type'));
+    }
+    cb(null, true);
+  }
+});
+
+
+
 
 // ==================== AUTH ROUTES ====================
 
@@ -373,19 +372,6 @@ app.put('/api/contributions/:id', authenticateToken, isAdmin, async (req, res) =
   }
 });
 
-// Multer setup
-const storage = multer.memoryStorage();
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'application/pdf'];
-    if (!allowed.includes(file.mimetype)) {
-      return cb(new Error('Invalid file type'));
-    }
-    cb(null, true);
-  }
-});
 
 app.post('/api/contributions/:id/proof', authenticateToken, upload.single('proof'), async (req, res) => {
   try {
@@ -729,10 +715,9 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Server is running' });
 });
 
-// ✅ IMPORTANT: Use server.listen, not app.listen
-server.listen(process.env.PORT || 5000, () => console.log('Server running'));
-server.listen(PORT, () => {
 
+// ==================== SERVER START ====================
+server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Database: PostgreSQL`);
   console.log(`🔐 JWT Secret: ${JWT_SECRET.substring(0, 10)}...`);
