@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const { Server } = require('socket.io');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const cloudinary = require('cloudinary').v2;
