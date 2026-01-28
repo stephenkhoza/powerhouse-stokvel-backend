@@ -8,7 +8,7 @@ const cloudinary = require('cloudinary').v2;
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const streamifier = require('streamifier'); // ✅ add here
+const streamifier = require('streamifier');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
@@ -23,59 +23,34 @@ cloudinary.config({
 const pool = require('./database');
 const { initializeDatabase } = require('./init-database');
 
-const app = express();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this';
 
-
 const allowedOrigins = [
-  'http://localhost:5173', // local dev (Vite)
-  'http://localhost:3000', // optional (React)
+  'http://localhost:5173',
+  'http://localhost:3000',
   'https://powerhouse-stokvel-frontend.vercel.app',
   'https://powerhouse-stokvel-frontend-1ly5.vercel.app'
 ];
 
+// ✅ Only declare app once
 const app = express();
 const server = http.createServer(app);
+
 // ==================== SOCKET.IO SETUP ====================
-// const io = new Server(server, {
-//      cors: {
-//        origin: ['http://localhost:3000', 'http://localhost:5173'], // Allow both ports
-//        methods: ['GET', 'POST', 'PUT', 'DELETE'],
-//        credentials: true
-//      }
-//    });
-
-
-   const io = new Server(server, {
+const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
-    methods: ['GET', 'POST','PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
   }
 });
 
-
-// Make io accessible in routes
-
-
-// const corsOptions = {
-//   origin: function (origin, callback) {
-//     // allow requests with no origin (like mobile apps or curl)
-//     if (!origin) return callback(null, true);
-//     if (allowedOrigins.indexOf(origin) === -1) {
-//       const msg = `CORS policy: This origin (${origin}) is not allowed.`;
-//       return callback(new Error(msg), false);
-//     }
-//     return callback(null, true);
-//   },
-//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//   credentials: true // allow cookies/auth headers
-// };
-
-// app.use(cors(corsOptions));
-// app.use(bodyParser.json());
-
+// Middleware to attach io to req
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 
 const corsOptions = {
   origin: function (origin, callback) {
@@ -96,7 +71,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(bodyParser.json());
 
-// To get real client IP when behind proxies (e.g., Heroku, Vercel)
+// To get real client IP when behind proxies
 app.set('trust proxy', 1);
 
 
@@ -871,8 +846,16 @@ app.get('/api/health', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📊 Database: PostgreSQL`);
   console.log(`🔐 JWT Secret: ${JWT_SECRET.substring(0, 10)}...`);
+  console.log(`🔌 WebSocket enabled`);
 });
+
+
+// app.listen(PORT, () => {
+//   console.log(`🚀 Server running on http://localhost:${PORT}`);
+//   console.log(`📊 Database: PostgreSQL`);
+//   console.log(`🔐 JWT Secret: ${JWT_SECRET.substring(0, 10)}...`);
+// });
