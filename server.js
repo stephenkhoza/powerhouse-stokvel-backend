@@ -8,7 +8,7 @@
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
-const { Server } = require('socket.io');
+
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const cloudinary = require('cloudinary').v2;
@@ -711,7 +711,9 @@ app.get('/api/health', (req, res) => {
 });
 
 // ✅ IMPORTANT: Use server.listen, not app.listen
+server.listen(process.env.PORT || 5000, () => console.log('Server running'));
 server.listen(PORT, () => {
+
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Database: PostgreSQL`);
   console.log(`🔐 JWT Secret: ${JWT_SECRET.substring(0, 10)}...`);
